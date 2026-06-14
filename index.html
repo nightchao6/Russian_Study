@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Читальня — разбор речей</title>
+<style>
+  /* ── Design tokens ──────────────────────────────────────────
+     Subject: Soviet/Russian political oratory archive.
+     Palette: aged dossier paper, oxblood stamp, faded typewriter ink,
+              archival blue annotation, muted gold for "known".
+     Type: Spectral (display, literary serif) + PT Sans (body, the
+           de-facto Russian UI face) + IBM Plex Mono (data/forms).    */
+  @import url('https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,800;1,400&family=PT+Sans:wght@400;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root{
+    --paper:#e9e3d4;          /* dossier paper      */
+    --paper-2:#f2ede0;        /* lighter card       */
+    --ink:#23201a;            /* typewriter ink     */
+    --ink-soft:#5c554740;     /* hairline           */
+    --oxblood:#7c241f;        /* stamp / accent     */
+    --oxblood-dim:#7c241f1a;
+    --archive:#2d4a63;        /* annotation blue    */
+    --gold:#9a7b1f;           /* "known" marker     */
+    --shadow:0 1px 0 #fff6, 0 18px 40px -22px #2320104d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(120% 80% at 80% -10%, #f4efe2 0%, transparent 55%),
+      var(--paper);
+    color:var(--ink);
+    font-family:"PT Sans",system-ui,sans-serif;
+    font-size:17px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* faint paper grain */
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none; opacity:.04; z-index:0;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  header{
+    border-bottom:2px solid var(--ink);
+    padding:18px 26px 14px; display:flex; align-items:baseline;
+    justify-content:space-between; gap:18px; flex-wrap:wrap; position:relative; z-index:1;
+  }
+  .brand{display:flex; align-items:baseline; gap:14px}
+  .brand h1{
+    font-family:"Spectral",serif; font-weight:800; font-size:30px;
+    letter-spacing:-.01em; margin:0;
+  }
+  .brand .ru{color:var(--oxblood)}
+  .stamp{
+    font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--oxblood); border:1.5px solid var(--oxblood);
+    padding:3px 8px; transform:rotate(-3deg); border-radius:2px; opacity:.85;
+  }
+  .tagline{font-family:"IBM Plex Mono",monospace; font-size:12px; color:#5c5547; letter-spacing:.04em}
+
+  main{
+    position:relative; z-index:1;
+    display:grid; grid-template-columns: 1.55fr 1fr; gap:0;
+    height:calc(100% - 74px);
+  }
+  @media (max-width:880px){
+    main{grid-template-columns:1fr; height:auto}
+    /* 解説パネルを画面下からせり上がるシートにする */
+    .panel{
+      position:fixed; left:0; right:0; bottom:0; z-index:50;
+      max-height:78vh; border-left:none; border-top:2px solid var(--ink);
+      box-shadow:0 -18px 40px -10px #23201066;
+      transform:translateY(100%); transition:transform .28s ease;
+      border-top-left-radius:14px; border-top-right-radius:14px;
+      padding-top:8px;
+    }
+    .panel.open{transform:translateY(0)}
+    /* 上部のつまみ＋閉じるボタン（モバイルのみ表示） */
+    .sheet-grip{display:flex; align-items:center; justify-content:space-between; margin-bottom:6px}
+    .sheet-grip .bar{flex:1; height:4px; background:#5c554766; border-radius:3px; margin:0 12px}
+    .sheet-close{border:none; background:transparent; color:var(--ink); font-size:22px;
+      line-height:1; padding:2px 8px; cursor:pointer}
+  }
+  /* PCではシートの装飾は出さない */
+  .sheet-grip{display:none}
+
+  /* ── Reading column ── */
+  .reader{padding:24px 30px; overflow:auto}
+  .toolbar{display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap}
+  textarea#src{
+    width:100%; min-height:140px; resize:vertical; background:var(--paper-2);
+    border:1px solid #5c554766; border-radius:3px; padding:12px 14px;
+    font-family:"PT Sans",sans-serif; font-size:16px; color:var(--ink);
+    box-shadow:var(--shadow);
+  }
+  textarea#src:focus{outline:2px solid var(--archive); outline-offset:1px}
+  button{
+    font-family:"IBM Plex Mono",monospace; font-size:13px; letter-spacing:.04em;
+    cursor:pointer; border:1.5px solid var(--ink); background:var(--ink); color:var(--paper);
+    padding:9px 16px; border-radius:3px; transition:transform .08s ease, background .15s;
+  }
+  button:hover{transform:translateY(-1px)}
+  button.ghost{background:transparent; color:var(--ink)}
+  button.ghost:hover{background:var(--ink); color:var(--paper)}
+  button:focus-visible{outline:2px solid var(--archive); outline-offset:2px}
+
+  .doc{
+    font-family:"Spectral",serif; font-size:21px; line-height:1.95; margin-top:8px;
+    border-top:1px dashed #5c554766; padding-top:18px;
+  }
+  .doc .w{
+    cursor:pointer; border-radius:2px; padding:0 1px; transition:background .12s;
+    text-decoration-thickness:1px;
+  }
+  .doc .w:hover{background:var(--oxblood-dim); text-decoration:underline; text-decoration-color:var(--oxblood)}
+  .doc .w.known{ background:#9a7b1f1f; box-shadow:inset 0 -2px 0 #9a7b1f66 }
+  .doc .w.saved{ box-shadow:inset 0 -2px 0 var(--oxblood) }
+  .doc .w.active{ background:var(--archive); color:var(--paper) }
+
+  /* ── Side panel ── */
+  .panel{
+    border-left:2px solid var(--ink); padding:22px 24px; overflow:auto;
+    background:linear-gradient(180deg, #f2ede0 0%, #e9e3d4 100%);
+  }
+  .tabs{display:flex; gap:6px; margin-bottom:18px}
+  .tab{
+    font-family:"IBM Plex Mono",monospace; font-size:12px; letter-spacing:.08em;
+    text-transform:uppercase; padding:6px 12px; border:1px solid #5c554766;
+    background:transparent; color:#5c5547; border-radius:3px; cursor:pointer;
+  }
+  .tab.on{background:var(--ink); color:var(--paper); border-color:var(--ink)}
+
+  .empty{font-family:"IBM Plex Mono",monospace; font-size:13px; color:#5c5547; line-height:1.7}
+
+  .card .head{border-bottom:1.5px solid var(--ink); padding-bottom:10px; margin-bottom:14px}
+  .lemma{font-family:"Spectral",serif; font-size:34px; font-weight:600; line-height:1.1}
+  .lemma .acc{color:var(--oxblood)}
+  .src-tag{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--archive); display:inline-block; margin-top:6px}
+  .src-tag.warn{color:var(--oxblood)}
+  .pos{font-style:italic; color:#5c5547; font-family:"Spectral",serif; font-size:16px; margin-left:8px}
+  .field{margin:12px 0}
+  .field .lbl{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.14em;
+    text-transform:uppercase; color:#5c5547; display:block; margin-bottom:3px}
+  .field .val{font-size:16px}
+  ol.defs{margin:4px 0 0; padding-left:20px; font-size:16px}
+  ol.defs li{margin-bottom:5px; line-height:1.5}
+  table.infl{border-collapse:collapse; width:100%; margin-top:6px; font-size:14px}
+  table.infl th,table.infl td{border:1px solid #5c554740; padding:5px 8px; text-align:left}
+  table.infl th{background:#2d4a6314; font-family:"IBM Plex Mono",monospace; font-size:11px;
+    letter-spacing:.04em; font-weight:500; color:var(--archive)}
+  .save-row{margin-top:18px; display:flex; gap:8px}
+  .spin{font-family:"IBM Plex Mono",monospace; font-size:13px; color:var(--oxblood)}
+  .spin::after{content:"▍"; animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* quiz */
+  .quiz-card{background:var(--paper-2); border:1px solid #5c554766; border-radius:4px;
+    padding:22px; box-shadow:var(--shadow)}
+  .quiz-q{font-family:"Spectral",serif; font-size:30px; font-weight:600; margin-bottom:4px}
+  .quiz-opts{display:flex; flex-direction:column; gap:8px; margin-top:16px}
+  .quiz-opts button{text-align:left; background:transparent; color:var(--ink); border-color:#5c554766}
+  .quiz-opts button.right{background:#2f6b3a; color:#fff; border-color:#2f6b3a}
+  .quiz-opts button.wrong{background:var(--oxblood); color:#fff; border-color:var(--oxblood)}
+  .progress{font-family:"IBM Plex Mono",monospace; font-size:12px; color:#5c5547; margin-bottom:14px}
+  .saved-list{list-style:none; padding:0; margin:0}
+  .saved-list li{display:flex; justify-content:space-between; align-items:center;
+    padding:8px 0; border-bottom:1px dashed #5c554766; font-family:"Spectral",serif; font-size:18px}
+  .saved-list .x{cursor:pointer; color:var(--oxblood); font-family:"IBM Plex Mono",monospace; font-size:12px}
+
+  .keyhint{position:fixed; bottom:10px; left:30px; font-family:"IBM Plex Mono",monospace;
+    font-size:11px; color:#5c554799; z-index:1}
+  @media (max-width:880px){ .keyhint{display:none} }
+
+  /* api key setup (only on GitHub Pages) */
+  .setup{background:#2d4a6314; border:1px solid var(--archive); border-radius:4px;
+    padding:14px; margin-bottom:16px; font-size:14px}
+  .setup input{width:100%; font-family:"IBM Plex Mono",monospace; font-size:13px;
+    padding:8px; border:1px solid #5c554766; border-radius:3px; margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Чита́льня <span class="ru">·</span> 露語の読解</h1>
+    <span class="stamp">演説アーカイブ</span>
+  </div>
+  <div class="tagline">単語をタップ（PCはカーソルを合わせる）と、解説が出ます</div>
+</header>
+
+<main>
+  <section class="reader">
+    <div id="setup"></div>
+    <div class="toolbar">
+      <button id="load">テキストを読み込む</button>
+      <button id="sample" class="ghost">例文を入れる</button>
+    </div>
+    <textarea id="src" placeholder="ここに演説を貼り付けてください。例：インターネットからコピーしたゴルバチョフやプーチンの演説の一部など…"></textarea>
+    <div id="doc" class="doc"></div>
+  </section>
+
+  <aside class="panel" id="panel">
+    <div class="sheet-grip"><span style="font-family:'IBM Plex Mono';font-size:11px;color:#5c5547">解説</span><span class="bar"></span><button class="sheet-close" id="sheetClose" aria-label="閉じる">×</button></div>
+    <div class="tabs">
+      <button class="tab on" data-tab="word">解説</button>
+      <button class="tab" data-tab="saved">単語帳 <span id="cnt"></span></button>
+      <button class="tab" data-tab="quiz">クイズ</button>
+    </div>
+    <div id="pane-word"><p class="empty">単語をタップすると、意味（英語・Wiktionary）・原形・品詞・ウダレーニエ（ロシア語版Wiktionary）・格変化／活用の表がここに出ます。キー不要・完全無料です。</p></div>
+    <div id="pane-saved" style="display:none"></div>
+    <div id="pane-quiz" style="display:none"></div>
+  </aside>
+</main>
+<div class="keyhint">Esc — 解説を閉じる ／ 保存は解説内の「単語帳に追加」から</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   ЧИТАЛЬНЯ — Russian speech reader（キー不要・完全無料版）
+   ウダレーニエ → ru.wiktionary.org（強勢はここ限定）
+   意味・原形・品詞 → en.wiktionary.org（英語定義）
+   格変化・活用表 → ru.wiktionary.org（パース済みHTMLの表）
+   キャッシュ → localStorage
+═══════════════════════════════════════════════════════════════ */
+
+const LS_CACHE='chital_cache_v2', LS_SAVED='chital_saved_v2';
+const cache = JSON.parse(localStorage.getItem(LS_CACHE)||'{}');
+let saved = JSON.parse(localStorage.getItem(LS_SAVED)||'{}');
+const saveCache=()=>localStorage.setItem(LS_CACHE,JSON.stringify(cache));
+const saveSaved=()=>{localStorage.setItem(LS_SAVED,JSON.stringify(saved));renderCount();};
+
+/* キー不要：すべて Wiktionary から取得（完全無料・スマホでもGitHubでも動く） */
+function buildSetup(){ /* APIキー欄は廃止 */ }
+
+/* ── CORS対応のJSON取得 ──
+   1) まず Wiktionary に origin=* で直接アクセス（単純リクエストになるよう最小限）
+   2) 失敗したら（埋め込みWebView等）公開CORSプロキシ経由で再試行 */
+const PROXIES = [
+  u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
+  u=>'https://corsproxy.io/?url='+encodeURIComponent(u),
+];
+async function getJSON(apiUrl){
+  // 直接
+  try{
+    const r=await fetch(apiUrl, {redirect:'follow'});
+    if(r.ok) return await r.json();
+  }catch(e){ /* fallthrough */ }
+  // プロキシ順に試す
+  for(const wrap of PROXIES){
+    try{
+      const r=await fetch(wrap(apiUrl));
+      if(r.ok){
+        const t=await r.text();
+        return JSON.parse(t);
+      }
+    }catch(e){ /* try next */ }
+  }
+  throw new Error('Wiktionaryに接続できませんでした（通信制限の可能性）');
+}
+
+const POS_JA = {'Proper noun':'固有名詞', Noun:'名詞', Verb:'動詞', Adjective:'形容詞', Adverb:'副詞',
+  Preposition:'前置詞', Pronoun:'代名詞', Conjunction:'接続詞', Numeral:'数詞',
+  Particle:'小詞', Interjection:'間投詞', Determiner:'限定詞', Phrase:'成句'};
+
+/* ── 内蔵辞書：高頻度の機能語（代名詞・前置詞・接続詞・be動詞など） ──
+   これらはWiktionaryの構造が特殊で取りこぼしやすく、かつ演説に頻出するので直接持つ。
+   形: {原形, 品詞, 強勢付き表記, 日本語, 英語} */
+const CORE = {
+  // 人称代名詞
+  'я':['я','代名詞','я','私は','I'],
+  'ты':['ты','代名詞','ты','君は','you (sg.)'],
+  'он':['он','代名詞','он','彼は','he'],
+  'она':['она','代名詞','она́','彼女は','she'],
+  'оно':['оно','代名詞','оно́','それは','it'],
+  'мы':['мы','代名詞','мы','私たちは','we'],
+  'вы':['вы','代名詞','вы','あなた（方）は','you (pl./formal)'],
+  'они':['они','代名詞','они́','彼らは','they'],
+  'его':['он','代名詞','его́','彼の／彼を','his / him（он・оноの生格・対格）'],
+  'её':['она','代名詞','её','彼女の／彼女を','her（онаの生格・対格）'],
+  'их':['они','代名詞','их','彼らの／彼らを','their / them（gen./acc. of они）'],
+  'ему':['он','代名詞','ему́','彼に','to him（онの与格）'],
+  'им':['они','代名詞','им','彼らに／彼によって','to them / by him'],  'нас':['мы','代名詞','нас','私たちを／私たちの','us（мыの生・対格）'],
+  'нам':['мы','代名詞','нам','私たちに','to us（мыの与格）'],
+  'вас':['вы','代名詞','вас','あなた方を','you（выの生・対格）'],
+  // 指示・限定
+  'это':['это','代名詞','э́то','これ／それ（は〜だ）','this / it / that is'],
+  'этот':['этот','限定詞','э́тот','この','this (m.)'],
+  'эта':['этот','限定詞','э́та','この','this (f.)'],
+  'эти':['этот','限定詞','э́ти','これらの','these'],
+  'тот':['тот','限定詞','тот','あの','that'],
+  'все':['весь','限定詞','все','すべての（人々）','all / everyone'],
+  'всё':['весь','代名詞','всё','すべて','everything'],
+  'весь':['весь','限定詞','весь','全体の','whole / all'],
+  'свой':['свой','限定詞','свой','自分の','one\u2019s own'],
+  'наш':['наш','限定詞','наш','私たちの','our'],
+  'наша':['наш','限定詞','на́ша','私たちの','our (f.)'],
+  // be動詞 быть の変化
+  'был':['быть','動詞','был','〜だった（男性）','was (m.) — past of быть'],
+  'была':['быть','動詞','была́','〜だった（女性）','was (f.)'],
+  'было':['быть','動詞','бы́ло','〜だった（中性）','was (n.)'],
+  'были':['быть','動詞','бы́ли','〜だった（複数）','were (pl.)'],
+  'есть':['быть','動詞','есть','〜がある／いる','is / there is'],
+  'будет':['быть','動詞','бу́дет','〜だろう','will be'],
+  'быть':['быть','動詞','быть','〜である','to be'],
+  // 前置詞
+  'в':['в','前置詞','в','〜の中に／へ','in / into'],
+  'на':['на','前置詞','на','〜の上に／へ','on / onto / at'],
+  'с':['с','前置詞','с','〜と共に／〜から','with / from'],
+  'со':['с','前置詞','со','〜と共に','with（сの異形）'],
+  'к':['к','前置詞','к','〜の方へ','toward / to'],
+  'от':['от','前置詞','от','〜から','from'],
+  'до':['до','前置詞','до','〜まで','until / up to'],
+  'по':['по','前置詞','по','〜に沿って／〜ごとに','along / by / per'],
+  'за':['за','前置詞','за','〜の後ろに／〜のために','behind / for'],
+  'из':['из','前置詞','из','〜の中から','out of / from'],
+  'у':['у','前置詞','у','〜のところに／〜のもとで','at / by / "to have"'],
+  'о':['о','前置詞','о','〜について','about'],
+  'об':['о','前置詞','об','〜について','about（оの異形）'],
+  'для':['для','前置詞','для','〜のために','for'],
+  'при':['при','前置詞','при','〜のもとで／〜の際に','under / during'],
+  'над':['над','前置詞','над','〜の上方に','above / over'],
+  'под':['под','前置詞','под','〜の下に','under'],
+  'через':['через','前置詞','че́рез','〜を通って／〜後に','through / after'],
+  // 接続詞・小詞
+  'и':['и','接続詞','и','〜と／そして','and'],
+  'а':['а','接続詞','а','一方で／しかし','and / but (contrast)'],
+  'но':['но','接続詞','но','しかし','but'],
+  'или':['или','接続詞','и́ли','または','or'],
+  'что':['что','接続詞','что','〜ということ／何','that / what'],
+  'как':['как','副詞','как','どのように／〜のように','how / as / like'],
+  'чтобы':['чтобы','接続詞','что́бы','〜するために','in order to'],
+  'если':['если','接続詞','е́сли','もし〜なら','if'],
+  'когда':['когда','副詞','когда́','〜のとき／いつ','when'],
+  'не':['не','小詞','не','〜ない（否定）','not'],
+  'ни':['ни','小詞','ни','〜さえも〜ない','not even / neither'],
+  'же':['же','小詞','же','（強調）','(emphatic particle)'],
+  'бы':['бы','小詞','бы','（仮定）','(conditional particle)'],
+  'ли':['ли','小詞','ли','〜かどうか','(question particle)'],
+  'уже':['уже','副詞','уже́','すでに','already'],
+  'ещё':['ещё','副詞','ещё','まだ／さらに','still / more'],
+  'только':['только','副詞','то́лько','ただ〜だけ','only'],
+  'также':['также','副詞','та́кже','〜もまた','also'],
+  'этого':['это','代名詞','э́того','これの／これを','of this（этоの生格）'],
+};
+function lookupCore(word){
+  const e = CORE[word.toLowerCase()];
+  if(!e) return null;
+  return { surface:word, lemma:e[0], pos_ja:e[1], stress:e[2],
+    defs:[e[3]+'（'+e[4]+'）'], glossLang:'core', note_en:'', table:null, _core:true };
+}
+
+/* ── 英語版Wiktionary: 原形・品詞・英語定義 ──
+   ロシア語セクションの「# 定義」を拾う。語形(form-of)なら原形へ辿る。 */
+async function fetchEnWik(word){
+  // 大文字小文字を区別するので、元の綴り → 小文字 の順で試す（固有名詞対策）
+  const tries = [word, word.toLowerCase()].filter((v,i,a)=>a.indexOf(v)===i);
+  for(const term of tries){
+    const url="https://en.wiktionary.org/w/api.php?action=parse&prop=wikitext&format=json&origin=*&redirects=1&page="
+      +encodeURIComponent(term);
+    let j;
+    try{ j=await getJSON(url); }catch(e){ if(term===tries[tries.length-1]) throw e; else continue; }
+    const wt=j?.parse?.wikitext?.["*"]; if(!wt) continue;
+    const out = parseEnRussian(wt, term);
+    if(out){
+      // 活用形なら原形を辿って定義を取り直す（ただし無限ループ防止）
+      if(out._formOf && out._formOf.toLowerCase()!==term.toLowerCase()){
+        const baseTerm = out._formOf.replace(/\u0301/g,'');
+        try{
+          const base = await fetchEnWik(baseTerm);
+          if(base && base.defs.length){ base.note_en='（'+word+' は '+base.lemma+' の語形）'; return base; }
+        }catch(e){ /* 辿れなければ自身を返す */ }
+      }
+      return out;
+    }
+  }
+  return null;
+}
+function parseEnRussian(wt, term){
+  const lc=term.toLowerCase();
+  // Russianセクションだけ切り出す（次の言語==X==まで）
+  let i=wt.indexOf('==Russian==');
+  if(i<0) return null;
+  let rest=wt.slice(i+11);
+  const nxt=rest.search(/\n==[^=]/);
+  const sec = nxt>=0 ? rest.slice(0,nxt) : rest;
+
+  // 品詞ブロックを順に拾う
+  const posRe=/===+\s*(Proper noun|Noun|Verb|Adjective|Adverb|Preposition|Pronoun|Conjunction|Numeral|Particle|Interjection|Determiner|Phrase)\s*===+/g;
+  let m, blocks=[];
+  while((m=posRe.exec(sec))){ blocks.push({pos:m[1], at:m.index}); }
+  if(!blocks.length) return null;
+  for(let b=0;b<blocks.length;b++){
+    const start=blocks[b].at, end=b+1<blocks.length?blocks[b+1].at:sec.length;
+    const body=sec.slice(start,end);
+    // 定義行（# で始まる、## や #: は用例なので除外）
+    const defs=[...body.matchAll(/\n#(?!#|\*|:)\s?(.+)/g)].map(x=>cleanWiki(x[1])).filter(Boolean);
+    if(!defs.length) continue;
+    // form-of（活用形）の検出のみ。原形辿りは呼び出し側(fetchEnWik)で行う
+    const formOf = body.match(/\{\{inflection of\|ru\|([^|}]+)/i) || body.match(/\{\{(?:plural|genitive|dative|accusative|prepositional|instrumental) of\|ru\|([^|}]+)/i);
+    const posName = blocks[b].pos;
+    return { lemma:term, pos:posName, pos_ja:POS_JA[posName]||posName, defs:defs.slice(0,4), _formOf:(formOf&&formOf[1])||null };
+  }
+  return null;
+}
+// wikiマークアップを軽く除去
+function cleanWiki(s){
+  return s
+    .replace(/\{\{[^{}]*\}\}/g,'')        // テンプレ
+    .replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g,'$2') // リンク
+    .replace(/'''?/g,'').replace(/<[^>]+>/g,'')
+    .replace(/&nbsp;/g,' ').trim();
+}
+
+/* ── ロシア語版Wiktionary: ウダレーニエ（強勢）only ──
+   約束どおり強勢は ru.wiktionary 限定。合成アクセント U+0301 を含む見出しを拾う。 */
+async function fetchStress(word){
+  // 大文字小文字を区別。元綴り→小文字 の順（固有名詞対策）
+  const tries=[word, word.toLowerCase()].filter((v,i,a)=>a.indexOf(v)===i);
+  for(const term of tries){
+    const wt = await ruWikitext(term);
+    if(!wt) continue;
+    const lc=term.toLowerCase();
+    const acutes=[...wt.matchAll(/[А-Яа-яЁё]+\u0301[А-Яа-яЁё]*/g)].map(m=>m[0]);
+    const strip=s=>s.replace(/\u0301/g,'').toLowerCase();
+    let hit=acutes.find(a=>strip(a)===lc);
+    if(!hit){
+      const bold=[...wt.matchAll(/'''([А-Яа-яЁё\u0301-]+)'''/g)].map(m=>m[1]);
+      hit=bold.find(b=>strip(b)===lc);
+    }
+    if(hit) return hit;
+  }
+  return null;
+}
+// ru.wiktionary の wikitext を取得（共通）
+async function ruWikitext(term){
+  try{
+    const url="https://ru.wiktionary.org/w/api.php?action=parse&prop=wikitext&format=json&origin=*&redirects=1&page="
+      +encodeURIComponent(term);
+    const j=await getJSON(url);
+    return j?.parse?.wikitext?.["*"]||null;
+  }catch(e){ return null; }
+}
+// 英語版に語義が無い時のフォールバック：ロシア語版の語義（Значение）を拾う
+async function fetchRuGloss(word){
+  const tries=[word, word.toLowerCase()].filter((v,i,a)=>a.indexOf(v)===i);
+  for(const term of tries){
+    const wt = await ruWikitext(term);
+    if(!wt) continue;
+    // 「Значение」節以降の # 定義行を拾う
+    let i=wt.search(/===?\s*Значение\s*===?/);
+    let body = i>=0 ? wt.slice(i) : wt;
+    const nxt = body.slice(10).search(/\n===?[^=]/);
+    if(nxt>=0) body=body.slice(0, nxt+10);
+    const defs=[...body.matchAll(/\n#(?!#|\*|:)\s?(.+)/g)].map(x=>cleanWiki(x[1])).filter(Boolean);
+    if(defs.length) return defs.slice(0,4);
+  }
+  return null;
+}
+
+/* ── ロシア語版Wiktionary: 格変化／活用テンプレートの表 ──
+   {{сущ ru ...}} 等の生成表はLua依存で重いので、parse済みHTMLの表を取得して整形 */
+async function fetchInflection(word){
+  const lc=word.toLowerCase();
+  try{
+    const url="https://ru.wiktionary.org/w/api.php?action=parse&prop=text&format=json&origin=*&redirects=1&disablelimitreport=1&page="
+      +encodeURIComponent(word);
+    const j=await getJSON(url);
+    const html=j?.parse?.text?.["*"]; if(!html) return null;
+    const dom=new DOMParser().parseFromString(html,'text/html');
+    // 変化表は class に morfotable / словоизменение を含む table
+    let tbl=dom.querySelector('table.morfotable, table[class*="morfotable"]');
+    if(!tbl){ // フォールバック：最初の wikitable
+      tbl=[...dom.querySelectorAll('table')].find(t=>/паде|форма|ед\.|мн\./i.test(t.textContent));
+    }
+    if(!tbl) return null;
+    const rows=[...tbl.querySelectorAll('tr')].map(tr=>
+      [...tr.querySelectorAll('th,td')].map(c=>c.textContent.replace(/\s+/g,' ').trim())
+    ).filter(r=>r.some(c=>c));
+    return rows.length?rows:null;
+  }catch(e){ return null; }
+}
+
+/* ── 統合：1単語ぶんの全データを集める ── */
+async function fetchWord(word){
+  // まず内蔵辞書（高頻度の機能語）をチェック。あれば即返す（通信不要）
+  const core = lookupCore(word);
+  if(core){
+    // 活用表だけはWiktionaryから取れたら添える（任意・失敗無視）
+    try{ const t=await fetchInflection(core.lemma); if(t) core.table=t; }catch(e){}
+    return core;
+  }
+  // 個別に失敗しても他は活かす（allSettled）
+  const [enR, stR, infR] = await Promise.allSettled([
+    fetchEnWik(word), fetchStress(word), fetchInflection(word)
+  ]);
+  const en   = enR.status==='fulfilled' ? enR.value : null;
+  const stress = stR.status==='fulfilled' ? stR.value : null;
+  const infl = infR.status==='fulfilled' ? infR.value : null;
+
+  // 3つすべて接続失敗（通信遮断）なら、はっきりエラーにする
+  if(!en && enR.status==='rejected'
+       && stR.status==='rejected' && infR.status==='rejected'){
+    throw new Error('Wiktionaryに接続できませんでした（通信制限の可能性）');
+  }
+  let defs = (en&&en.defs) || [];
+  let glossLang = 'en';
+  // 英語版に語義が無ければ、ロシア語版の語義（ロシア語）を補う
+  if(!defs.length){
+    try{
+      const ru = await fetchRuGloss(word);
+      if(ru && ru.length){ defs = ru; glossLang='ru'; }
+    }catch(e){ /* ignore */ }
+  }
+
+  return {
+    surface: word,
+    lemma: (en&&en.lemma) || word,
+    pos_ja: en&&en.pos_ja || '',
+    defs: defs,
+    glossLang: glossLang,        // 'en' or 'ru'
+    note_en: en&&en.note_en || '',
+    stress: stress,        // 強勢付き原形 or null
+    table: infl            // 二次元配列 or null
+  };
+}
+
+/* ───────────────────────── tokenizer ───────────────────────── */
+function tokenize(text){
+  // split keeping punctuation/space; russian words = cyrillic runs (with hyphen)
+  return text.split(/(\s+|[^А-Яа-яЁё-]+)/).filter(s=>s!=='');
+}
+const isWord=t=>/[А-Яа-яЁё]/.test(t);
+
+let sentences=[]; // for context lookup
+function renderDoc(text){
+  const doc=document.getElementById('doc');
+  doc.innerHTML='';
+  sentences = text.split(/(?<=[.!?…])\s+/);
+  // map char ranges to sentences for context
+  const toks=tokenize(text);
+  toks.forEach(tok=>{
+    if(isWord(tok)){
+      const span=document.createElement('span');
+      span.className='w'; span.textContent=tok;
+      const key=tok.toLowerCase();
+      if(saved[key]) span.classList.add('saved');
+      // PC: ホバーで解説 / スマホ・PC共通: タップで解説
+      span.addEventListener('mouseenter',()=>onHover(tok,span));
+      span.addEventListener('click',e=>{ e.preventDefault(); clearTimeout(hoverTimer); lookup(tok,span); });
+      doc.appendChild(span);
+    }else{
+      doc.appendChild(document.createTextNode(tok));
+    }
+  });
+}
+function sentenceFor(word){
+  const s=sentences.find(s=>s.toLowerCase().includes(word.toLowerCase()));
+  return s||word;
+}
+
+/* ───────────────────── hover → разбор ───────────────────── */
+let hoverTimer=null, activeSpan=null;
+const CAN_HOVER = window.matchMedia && window.matchMedia('(hover:hover)').matches;
+function onHover(word, span){
+  if(!CAN_HOVER) return;            // タッチ端末ではホバー無効（タップで開く）
+  clearTimeout(hoverTimer);
+  hoverTimer=setTimeout(()=>lookup(word, span), 180); // debounce
+}
+async function lookup(word, span){
+  switchTab('word');
+  if(activeSpan) activeSpan.classList.remove('active');
+  activeSpan=span; span.classList.add('active');
+  const key=word.toLowerCase();
+  const pane=document.getElementById('pane-word');
+
+  if(cache[key]){ renderCard(cache[key]); return; }
+
+  pane.innerHTML='<p class="spin">Wiktionaryで調べています</p>';
+  try{
+    const info = await fetchWord(word);
+    cache[key]=info; saveCache();
+    renderCard(info);
+  }catch(e){
+    pane.innerHTML=`<div class="empty" style="color:var(--oxblood)">
+      調べられませんでした：${e.message}<br><br>
+      <span style="color:#5c5547">外部辞書(Wiktionary)への通信がブロックされている可能性があります。
+      アプリ内ブラウザより、Safari/ChromeでこのページのURLを直接開くか、
+      GitHub Pagesに公開したURLで開くと改善することが多いです。</span>
+    </div>`;
+  }
+}
+
+/* 語義の代表（単語帳・クイズ用）：英語定義の先頭 */
+function glossOf(w){
+  if(w.defs && w.defs.length) return w.defs[0];
+  return w.gloss_en||w.gloss_ja||'';  // 旧キャッシュ互換
+}
+function accentHTML(stressed){
+  if(!stressed) return null;
+  // render combining acute as colored superscript-ish accent
+  return stressed.replace(/([А-Яа-яЁё])\u0301/g,'<span class="acc">$1\u0301</span>');
+}
+
+function renderCard(info){
+  const pane=document.getElementById('pane-word');
+  const acc = accentHTML(info.stress);
+  const lemmaShown = acc ? acc : (info.lemma||info.surface);
+  const stressTag = info.stress
+      ? '<span class="src-tag">ウダレーニエ · Викисловарь</span>'
+      : '<span class="src-tag warn">ウダレーニエはВикисловарьに見つかりませんでした</span>';
+
+  // 意味（英語定義）
+  let defsHtml;
+  if(info.defs && info.defs.length){
+    defsHtml = '<ol class="defs">'+info.defs.map(d=>`<li>${d}</li>`).join('')+'</ol>';
+  }else{
+    defsHtml = '<div class="val" style="color:var(--oxblood)">Wiktionaryに語義が見つかりませんでした（固有名詞や稀な語の可能性）。</div>';
+  }
+  const noteHtml = info.note_en
+      ? `<div class="field"><span class="lbl">語形について</span><div class="val">${info.note_en}</div></div>` : '';
+
+  // 変化表（二次元配列）
+  let tbl='';
+  if(info.table && info.table.length){
+    const rows=info.table.map(r=>'<tr>'+r.map((c,i)=> (i===0?`<th>${c}</th>`:`<td>${c}</td>`)).join('')+'</tr>').join('');
+    tbl=`<div class="field"><span class="lbl">格変化・活用（Викисловарь）</span>
+         <table class="infl">${rows}</table></div>`;
+  }
+
+  const isSaved = !!saved[(info.surface||'').toLowerCase()];
+  pane.innerHTML=`
+    <div class="card">
+      <div class="head">
+        <div class="lemma">${lemmaShown}<span class="pos">${info.pos_ja||''}</span></div>
+        ${stressTag}
+      </div>
+      <div class="field"><span class="lbl">意味（${info.glossLang==='core'?'基本語':info.glossLang==='ru'?'ロシア語':'英語'}・${info.glossLang==='core'?'内蔵辞書':'Wiktionary'}）</span>${defsHtml}</div>
+      ${noteHtml}
+      ${tbl}
+      <div class="save-row">
+        <button id="saveBtn">${isSaved?'✓ 単語帳に保存済み':'+ 単語帳に追加'}</button>
+      </div>
+    </div>`;
+  document.getElementById('saveBtn').onclick=()=>{ toggleSave(info.surface); };
+}
+
+/* ───────────────────── словарь / saved ───────────────────── */
+function toggleSave(word){
+  const key=word.toLowerCase();
+  if(saved[key]){ delete saved[key]; }
+  else{ saved[key]= cache[key] || {surface:word, lemma:word}; }
+  saveSaved();
+  // refresh doc highlight + card button
+  document.querySelectorAll('.doc .w').forEach(s=>{
+    if(s.textContent.toLowerCase()===key) s.classList.toggle('saved', !!saved[key]);
+  });
+  if(activeSpan && activeSpan.textContent.toLowerCase()===key){
+    const b=document.getElementById('saveBtn'); if(b) b.textContent = saved[key]?'✓ 単語帳に保存済み':'+ 単語帳に追加';
+  }
+  renderSaved();
+}
+function renderCount(){
+  document.getElementById('cnt').textContent='('+Object.keys(saved).length+')';
+}
+function renderSaved(){
+  const pane=document.getElementById('pane-saved');
+  const keys=Object.keys(saved);
+  if(!keys.length){ pane.innerHTML='<p class="empty">本文中の単語をクリックすると、ここに追加されます。ここに溜めた単語からクイズが作られます。</p>'; return; }
+  let li='';
+  keys.forEach(k=>{
+    const w=saved[k];
+    const acc=accentHTML(w.stress)|| (w.lemma||w.surface);
+    li+=`<li><span>${acc} <span style="font-family:'PT Sans';font-size:13px;color:#5c5547">— ${glossOf(w)}</span></span>
+         <span class="x" data-k="${k}">削除</span></li>`;
+  });
+  pane.innerHTML=`<ul class="saved-list">${li}</ul>`;
+  pane.querySelectorAll('.x').forEach(x=>x.onclick=()=>{ delete saved[x.dataset.k]; saveSaved(); renderSaved();
+    document.querySelectorAll('.doc .w').forEach(s=>{ if(s.textContent.toLowerCase()===x.dataset.k) s.classList.remove('saved'); }); });
+}
+
+/* ───────────────────────── викторина ───────────────────────── */
+let quiz=null;
+function startQuiz(){
+  const entries=Object.values(saved).filter(w=>glossOf(w));
+  const pane=document.getElementById('pane-quiz');
+  if(entries.length<4){ pane.innerHTML='<p class="empty">クイズには、解説付きの単語が最低4つ必要です。単語にカーソルを合わせて（意味を読み込ませて）から、クリックして単語帳に保存してください。</p>'; return; }
+  quiz={pool:shuffle(entries.slice()), i:0, score:0, total:Math.min(entries.length,10)};
+  quiz.pool=quiz.pool.slice(0,quiz.total);
+  nextQ();
+}
+function nextQ(){
+  const pane=document.getElementById('pane-quiz');
+  if(quiz.i>=quiz.total){
+    pane.innerHTML=`<div class="quiz-card"><div class="quiz-q">終了</div>
+      <p>正解：<b>${quiz.score} / ${quiz.total}</b></p>
+      <button onclick="startQuiz()">もう一度</button></div>`; return;
+  }
+  const cur=quiz.pool[quiz.i];
+  const all=Object.values(saved).filter(w=>glossOf(w));
+  const wrong=shuffle(all.filter(w=>w!==cur)).slice(0,3);
+  const opts=shuffle([cur,...wrong]);
+  const gl=w=>glossOf(w);
+  const acc=accentHTML(cur.stress)||(cur.lemma||cur.surface);
+  pane.innerHTML=`<div class="progress">第 ${quiz.i+1} 問 / ${quiz.total} 問 · スコア ${quiz.score}</div>
+    <div class="quiz-card">
+      <div class="quiz-q">${acc}</div>
+      <div style="font-family:'IBM Plex Mono';font-size:11px;color:#5c5547;letter-spacing:.1em">意味を選んでください</div>
+      <div class="quiz-opts">
+        ${opts.map((o,n)=>`<button data-correct="${o===cur}">${gl(o)}</button>`).join('')}
+      </div>
+    </div>`;
+  pane.querySelectorAll('.quiz-opts button').forEach(b=>{
+    b.onclick=()=>{
+      const ok=b.dataset.correct==='true';
+      if(ok){ b.classList.add('right'); quiz.score++; }
+      else{ b.classList.add('wrong');
+        pane.querySelectorAll('.quiz-opts button').forEach(x=>{ if(x.dataset.correct==='true') x.classList.add('right'); }); }
+      pane.querySelectorAll('.quiz-opts button').forEach(x=>x.disabled=true);
+      setTimeout(()=>{ quiz.i++; nextQ(); }, 850);
+    };
+  });
+}
+const shuffle=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
+
+/* ───────────────────────── tabs / UI ───────────────────────── */
+function openSheet(){ document.getElementById('panel').classList.add('open'); }
+function closeSheet(){
+  document.getElementById('panel').classList.remove('open');
+  if(activeSpan){ activeSpan.classList.remove('active'); activeSpan=null; }
+}
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.tab===name));
+  document.getElementById('pane-word').style.display = name==='word'?'':'none';
+  document.getElementById('pane-saved').style.display= name==='saved'?'':'none';
+  document.getElementById('pane-quiz').style.display = name==='quiz'?'':'none';
+  if(name==='saved') renderSaved();
+  if(name==='quiz' && (!quiz || quiz.i>=quiz.total)) startQuiz();
+  openSheet();  // タブ操作でもシートを開く（モバイル）
+}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
+document.getElementById('sheetClose').onclick=closeSheet;
+
+document.getElementById('load').onclick=()=>renderDoc(document.getElementById('src').value);
+document.getElementById('sample').onclick=()=>{
+  document.getElementById('src').value=
+    "Мы живём в переломное время. Перестройка требует от нас решительных действий и нового мышления. "
+   +"Народ ждёт перемен, и мы обязаны оправдать его доверие. Гласность открывает путь к свободному обмену мнениями.";
+  renderDoc(document.getElementById('src').value);
+};
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    closeSheet();
+    document.getElementById('pane-word').innerHTML='<p class="empty">単語にカーソルを合わせるか、タップしてください。</p>'; }
+});
+
+buildSetup(); renderCount();
+</script>
+</body>
+</html>
